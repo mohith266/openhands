@@ -450,13 +450,12 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             yield task
 
             # Process any pending messages queued while waiting for conversation
-            if sandbox.session_api_key:
-                await self._process_pending_messages(
-                    task_id=task.id,
-                    conversation_id=info.id,
-                    agent_server_url=agent_server_url,
-                    session_api_key=sandbox.session_api_key,
-                )
+            await self._process_pending_messages(
+                task_id=task.id,
+                conversation_id=info.id,
+                agent_server_url=agent_server_url,
+                session_api_key=sandbox.session_api_key,
+            )
 
         except Exception as exc:
             _logger.exception('Error starting conversation', stack_info=True)
@@ -1803,7 +1802,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         task_id: UUID,
         conversation_id: UUID,
         agent_server_url: str,
-        session_api_key: str,
+        session_api_key: str | None = None,
     ) -> None:
         """Process pending messages queued before conversation was ready.
 
@@ -1814,7 +1813,9 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             task_id: The start task ID (may have been used as conversation_id initially)
             conversation_id: The real conversation ID
             agent_server_url: URL of the agent server
-            session_api_key: API key for authenticating with agent server
+            session_api_key: Optional API key for authenticating with agent server.
+                When None (e.g. local/self-hosted installations), the request is
+                sent without authentication headers.
         """
         # Convert UUIDs to strings for the pending message service
         # The frontend uses task-{uuid.hex} format (no hyphens), matching OpenHandsUUID serialization
@@ -1855,6 +1856,9 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 # Serialize content objects to JSON-compatible dicts
                 content_json = [item.model_dump() for item in msg.content]
                 # Use the events endpoint which handles message sending
+                headers = {}
+                if session_api_key:
+                    headers['X-Session-API-Key'] = session_api_key
                 response = await self.httpx_client.post(
                     f'{agent_server_url}/api/conversations/{conversation_id_str}/events',
                     json={
@@ -1862,7 +1866,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                         'content': content_json,
                         'run': True,
                     },
-                    headers={'X-Session-API-Key': session_api_key},
+                    headers=headers,
                     timeout=30.0,
                 )
                 response.raise_for_status()
