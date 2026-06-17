@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from server.constants import (
+    DEFAULT_COMMERCIAL_ORG_CONCURRENT_SANDBOXES,
     DEFAULT_PERSONAL_ORG_CONCURRENT_SANDBOXES,
     ROLE_ADMIN,
     ROLE_OWNER,
@@ -26,7 +27,21 @@ from storage.org_store import OrgStore
 from storage.role_store import RoleStore
 from storage.user_store import UserStore
 
+from openhands.app_server.utils.concurrency import (
+    get_max_concurrent_sandboxes_fallback,
+)
 from openhands.app_server.utils.logger import openhands_logger as logger
+
+
+def _fallback_org_max_concurrent_sandboxes(
+    org_id: UUID, user_id: UUID | None = None
+) -> int:
+    default = (
+        DEFAULT_PERSONAL_ORG_CONCURRENT_SANDBOXES
+        if user_id is not None and str(org_id) == str(user_id)
+        else DEFAULT_COMMERCIAL_ORG_CONCURRENT_SANDBOXES
+    )
+    return get_max_concurrent_sandboxes_fallback(default)
 
 
 class OrgMemberService:
@@ -68,8 +83,8 @@ class OrgMemberService:
         org = await OrgStore.get_org_by_id(org_id)
         org_max_concurrent_sandboxes = (
             org.max_concurrent_sandboxes
-            if org and org.max_concurrent_sandboxes
-            else DEFAULT_PERSONAL_ORG_CONCURRENT_SANDBOXES
+            if org and org.max_concurrent_sandboxes is not None
+            else _fallback_org_max_concurrent_sandboxes(org_id, user_id)
         )
 
         return MeResponse.from_org_member(
@@ -117,8 +132,8 @@ class OrgMemberService:
         org = await OrgStore.get_org_by_id(org_id)
         org_max_concurrent_sandboxes = (
             org.max_concurrent_sandboxes
-            if org and org.max_concurrent_sandboxes
-            else DEFAULT_PERSONAL_ORG_CONCURRENT_SANDBOXES
+            if org and org.max_concurrent_sandboxes is not None
+            else _fallback_org_max_concurrent_sandboxes(org_id, current_user_id)
         )
 
         # Call store to get paginated members
@@ -342,8 +357,8 @@ class OrgMemberService:
         org = await OrgStore.get_org_by_id(org_id)
         org_max_concurrent_sandboxes = (
             org.max_concurrent_sandboxes
-            if org and org.max_concurrent_sandboxes
-            else DEFAULT_PERSONAL_ORG_CONCURRENT_SANDBOXES
+            if org and org.max_concurrent_sandboxes is not None
+            else _fallback_org_max_concurrent_sandboxes(org_id, current_user_id)
         )
 
         # Track if any updates were made
